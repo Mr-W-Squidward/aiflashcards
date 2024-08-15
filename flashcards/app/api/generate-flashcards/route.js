@@ -22,24 +22,24 @@ Return your response in the following JSON format:
 `;
 
 export async function POST(req) {
-    try {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
-        const data = await req.text();
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const data = await req.text();
 
-        const fullPrompt = `${systemPrompt}\nHere are the notes:\n${data}`;
+    const fullPrompt = `${systemPrompt}\nHere are the notes:\n${data}`;
 
-        const response = await model.generateContent({ prompt: [fullPrompt] });
+    const response = await model.generateContent({ prompt: fullPrompt });
 
-        if (!response || !response.content) {
-            return NextResponse.json({ error: "Failed to generate flashcards" }, { status: 500 });
-        }
-
-        const flashcards = JSON.parse(response.content);
-
-        return NextResponse.json(flashcards.flashcards);
-    } catch (error) {
-        console.error("Error in POST /api/generate-flashcards:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    if (!response || !response.content) {
+      return NextResponse.json({ error: "Failed to generate flashcards" }, { status: 500 });
     }
+
+    const flashcards = JSON.parse(response.content);
+
+    return NextResponse.json(flashcards.flashcards);
+  } catch (error) {
+    console.error("Error in POST /api/generate-flashcards:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
 }
