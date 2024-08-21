@@ -26,21 +26,27 @@ export default function Home() {
           <div className="flex flex-row gap-8">
             <SignedOut>
               <a href="/sign-up">
-                <button>
+                <button className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition duration-300">
                   Get started
                 </button>
               </a>
               <a href="/sign-in">
-                <button className="bg-transparent border-2 hover:bg-transparent text-white">
+                <button className="bg-transparent border-2 border-blue-500 text-blue-500 px-4 py-2 rounded hover:bg-blue-500 hover:text-white transition duration-300">
                   Sign In
                 </button>
               </a>
             </SignedOut>
             <SignedIn>
               <a href="/generate">
-                <button>Let's go!</button>
+                <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition duration-300">
+                  Let's go!
+                </button>
               </a>
-              <SignOutButton/>
+              <SignOutButton>
+                <button className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition duration-300">
+                  Sign Out
+                </button>
+              </SignOutButton>
             </SignedIn>
           </div>
         </div>

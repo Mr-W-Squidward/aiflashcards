@@ -8,7 +8,8 @@ If an answer is correct, return true. The answer must be factually correct and c
 
 If not, then return false.
 
-If incorrect, you should also return a tip for them to improve their answer. If the answer is incorrect, return an empty string for the improvement.
+If incorrect, you should also return a tip for them to improve their answer. If the answer is incorrect, return the answer as well as what you think went wrong in the users thinking. 
+Address the prompt with 'you' instead of the user.
 
 Return as {
     'correct': return_value,
