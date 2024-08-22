@@ -2,8 +2,7 @@
 
 import { db } from "@/firebase";
 import { useUser, SignOutButton } from "@clerk/nextjs";
-import { collection, doc, getDocs, setDoc, getDoc } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { collection, doc, getDoc, setDoc } from "firebase/firestore";
 import { useState, useEffect } from "react";
 import { IoIosClose } from "react-icons/io";
 import { IconContext } from "react-icons";
@@ -13,8 +12,8 @@ import { AiOutlineLoading } from "react-icons/ai";
 import UploadCurriculum from "@/app/curriculum/page";
 
 export default function Generate() {
+  const { isLoaded, user } = useUser();
   const [input, setInput] = useState("");
-  const { isLoaded, isSignedIn, user } = useUser();
   const [page, setPage] = useState("create");
   const [sessions, setSessions] = useState([]);
   const [sideBar, setSideBar] = useState("16rem");
@@ -44,37 +43,35 @@ export default function Generate() {
   const [card, setCard] = useState(["", ""]);
   const [cardLoading, setCardLoading] = useState("none");
   const loadMaterial = async () => {
-    if (isLoaded) {
-      if (user) {
-        setCardLoading("flex");
-        const docRef = doc(collection(db, "flashcard"), user.id);
-        const docSnap = await getDoc(docRef);
-        try {
-          var currCategories = Object.keys(docSnap.data()[subject]["topics"]).sort();
-          var currCategory = currCategories[parseInt(currCategories.length * Math.random())];
-          const response = await fetch("/api/card", {
-            method: "POST",
-            headers: {
-              "Content-Type": "text/plain",
-            },
-            body: JSON.stringify(currCategory),
-          });
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          var returnedQ = "";
+    if (isLoaded && user) {
+      setCardLoading("flex");
+      const docRef = doc(collection(db, "flashcard"), user.id);
+      const docSnap = await getDoc(docRef);
+      try {
+        var currCategories = Object.keys(docSnap.data()[subject]["topics"]).sort();
+        var currCategory = currCategories[parseInt(currCategories.length * Math.random())];
+        const response = await fetch("/api/card", {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain",
+          },
+          body: JSON.stringify(currCategory),
+        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        var returnedQ = "";
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            returnedQ += text;
-          }
-
-          setCard([currCategory, JSON.parse(returnedQ)["question"]]);
-          setCardLoading("none");
-        } catch (err) {
-          console.error("Error loading material:", err);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          returnedQ += text;
         }
+
+        setCard([currCategory, JSON.parse(returnedQ)["question"]]);
+        setCardLoading("none");
+      } catch (err) {
+        console.error("Error loading material:", err);
       }
     }
   };
@@ -100,16 +97,13 @@ export default function Generate() {
   const loaderDisplayLoad = () => (!loading ? "none" : "flex");
 
   const updateSessions = async () => {
-    if (isLoaded) {
-      if (user) {
-        const docRef = doc(collection(db, "flashcard"), user.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const storedSessions = docSnap.data();
-          setSessions(Object.keys(storedSessions).sort());
-        }
+    if (isLoaded && user) {
+      const docRef = doc(collection(db, "flashcard"), user.id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const storedSessions = docSnap.data();
+        setSessions(Object.keys(storedSessions).sort());
       }
-      renderPrevSessions();
     }
   };
   useEffect(() => {
@@ -124,6 +118,7 @@ export default function Generate() {
           onClick={() => {
             setPage(i);
             setShowOtherPages("flex");
+            setShowCreate("none");
           }}
           key={i}
           className="p-2 w-full bg-gray-200 hover:brightness-90 cursor-pointer"
@@ -178,55 +173,53 @@ export default function Generate() {
   };
 
   const newSession = async () => {
-    if (!loading) {
+    if (!loading && user) {
       setLoading(true);
-      if (user) {
-        if (user.id) {
-          setSessions((prevData) => [...prevData, input]);
-          const docRef = doc(collection(db, "flashcard"), user.id);
-          const docSnap = await getDoc(docRef);
-          let prevData = {};
-          if (docSnap.exists()) {
-            prevData = docSnap.data();
-          }
-          const date = new Date();
-          const response = await fetch("/api/generate", {
-            method: "POST",
-            headers: {
-              "Content-Type": "text/plain",
-            },
-            body: JSON.stringify(input),
-          });
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          var returnedTopics = "";
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            returnedTopics += text;
-          }
-          returnedTopics = JSON.parse(returnedTopics);
-          returnedTopics = returnedTopics["subtopics"];
-
-          var topics = {};
-          for (let i = 0; i < returnedTopics.length; i++) {
-            topics[returnedTopics[i]] = {
-              streak: 0,
-            };
-          }
-          prevData[input] = {
-            date: {
-              day: date.getDate(),
-              month: date.getMonth() + 1,
-              year: date.getFullYear(),
-            },
-            topics,
-          };
-          await setDoc(docRef, prevData);
-          setInput("");
+      if (user.id) {
+        setSessions((prevData) => [...prevData, input]);
+        const docRef = doc(collection(db, "flashcard"), user.id);
+        const docSnap = await getDoc(docRef);
+        let prevData = {};
+        if (docSnap.exists()) {
+          prevData = docSnap.data();
         }
+        const date = new Date();
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain",
+          },
+          body: JSON.stringify(input),
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        var returnedTopics = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          returnedTopics += text;
+        }
+        returnedTopics = JSON.parse(returnedTopics);
+        returnedTopics = returnedTopics["subtopics"];
+
+        var topics = {};
+        for (let i = 0; i < returnedTopics.length; i++) {
+          topics[returnedTopics[i]] = {
+            streak: 0,
+          };
+        }
+        prevData[input] = {
+          date: {
+            day: date.getDate(),
+            month: date.getMonth() + 1,
+            year: date.getFullYear(),
+          },
+          topics,
+        };
+        await setDoc(docRef, prevData);
+        setInput("");
       }
       setLoading(false);
     }
@@ -302,7 +295,7 @@ export default function Generate() {
           </div>
           <div className="w-full flex flex-col p-4 pt-2">
             <button
-              onClick={() => setShowCurriculum(true)} // Show the curriculum upload modal
+              onClick={() => setShowCurriculum(true)}
               className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition duration-300"
             >
               Upload Curriculum
@@ -310,6 +303,7 @@ export default function Generate() {
           </div>
           <div className="w-full flex flex-col p-4 pt-2">{renderPrevSessions()}</div>
         </div>
+
         <div className="px-0 bg-white h-full grow flex flex-col">
           <div className="w-full p-4 border-b-2 h-20 flex flex-row items-center gap-4">
             <div style={{ display: showIcons() }} className="rounded p-2 bg-white hover:brightness-90">
@@ -334,6 +328,7 @@ export default function Generate() {
               </IconContext.Provider>
             </div>
           </div>
+
           <div className="w-full h-full flex flex-col p-12 overflow-x-hidden overflow-y-scroll">
             <div
               style={{ display: showCreate }}
@@ -344,17 +339,13 @@ export default function Generate() {
               <input
                 className="text-black border-2 focus:outline-black p-2"
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                }}
+                onChange={(e) => setInput(e.target.value)}
                 placeholder="Study topic"
               ></input>
               <button
                 style={{ display: buttonDisplayLoad() }}
                 className="border-2"
-                onClick={() => {
-                  newSession();
-                }}
+                onClick={newSession}
               >
                 Let's go!
               </button>
@@ -365,6 +356,7 @@ export default function Generate() {
                 />
               </IconContext.Provider>
             </div>
+
             <div
               style={{ display: showOtherPages }}
               className="w-full h-full box-border bg-white flex items-center justify-center flex-col gap-4"
@@ -387,22 +379,16 @@ export default function Generate() {
                     <div className="flex flex-row gap-4 w-full">
                       <input
                         value={answer}
-                        onChange={(e) => {
-                          setAnswer(e.target.value);
-                        }}
+                        onChange={(e) => setAnswer(e.target.value)}
                         className="text-black border-2 focus:outline-black p-2 grow"
                         placeholder="Your answer"
                       ></input>
-                      <button
-                        onClick={() => {
-                          onAnswer();
-                        }}
-                        className="border-2"
-                      >
+                      <button onClick={onAnswer} className="border-2">
                         Check
                       </button>
                     </div>
                   </div>
+
                   <div
                     style={{ display: showA }}
                     className="p-4 border-2 flex flex-col gap-4 items-center justify-center rounded"
@@ -427,24 +413,26 @@ export default function Generate() {
           </div>
         </div>
       </div>
+
       {showCurriculum && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-lg w-1/2">
+          <div className="bg-white p-8 rounded-lg w-1/2 relative">
             <button
-                onClick={() => setShowCurriculum(false)}
-                className="absolute top-4 right-4 text-2xl"
+              onClick={() => setShowCurriculum(false)}
+              className="absolute top-4 right-4 text-2xl"
             >
-                <IoIosClose />
+              <IoIosClose />
             </button>
             <UploadCurriculum
-                onSubmit={(curriculumData) => {
+              onSubmit={(curriculumData) => {
                 newSessionFromCurriculum(curriculumData);
-                setShowCurriculum(false); 
-                }}
+                setShowCurriculum(false);
+              }}
+              onClose={() => setShowCurriculum(false)}
             />
-            </div>
+          </div>
         </div>
-        )}
+      )}
     </div>
   );
 }
