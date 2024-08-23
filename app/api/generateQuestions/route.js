@@ -35,21 +35,63 @@ export async function POST(req) {
     }
 
     const curriculumText = curriculum.join("\n");
-    const response = await model.generateContent({
-      prompt: systemPrompt + curriculumText,
+
+    let response = await model.generateContentStream(systemPrompt + curriculumText);
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const encoder = new TextEncoder();
+          let content = "";
+
+          for await (const chunk of response.stream) {
+            const text = chunk.text();
+            if (text) {
+              content += text;
+            }
+          }
+
+          // Parsing the content
+          let generatedContent;
+          try {
+            generatedContent = JSON.parse(content);
+          } catch (err) {
+            console.error("Failed to parse AI-generated content:", err);
+            return controller.close();
+          }
+
+          // Check if topics are generated correctly
+          if (generatedContent.topics && generatedContent.topics.length > 0) {
+            // Filter out any irrelevant topics/questions
+            const validTopics = generatedContent.topics.filter(topic => topic.name && topic.questions && topic.questions.length > 0);
+
+            if (validTopics.length === 0) {
+              controller.enqueue(encoder.encode(JSON.stringify({
+                success: false,
+                message: "No valid topics or questions generated.",
+              })));
+            } else {
+              const jsonResponse = JSON.stringify({
+                success: true,
+                topics: validTopics,
+              });
+              controller.enqueue(encoder.encode(jsonResponse));
+            }
+          } else {
+            controller.enqueue(encoder.encode(JSON.stringify({
+              success: false,
+              message: "Unexpected response format from the AI model.",
+            })));
+          }
+        } catch (err) {
+          console.error("Error processing stream:", err);
+        } finally {
+          controller.close();
+        }
+      }
     });
 
-    try {
-      const generatedContent = JSON.parse(response.content);
-    } catch (err) {
-      console.error("Failed to parse AI-generated content:", err);
-      return NextResponse.json(
-        { success: false, message: "Failed to parse AI-generated content." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true, topics: generatedContent.topics });
+    return new NextResponse(stream);
   } catch (error) {
     console.error("Error in /api/generateQuestions:", error);
     return NextResponse.json(

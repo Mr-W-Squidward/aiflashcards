@@ -22,6 +22,15 @@ export default function Generate() {
   const [showQ, setShowQ] = useState("flex");
   const [showA, setShowA] = useState("none");
   const [showCurriculum, setShowCurriculum] = useState(false);
+  const [showCreate, setShowCreate] = useState("flex");
+  const [showOtherPages, setShowOtherPages] = useState("none");
+
+  const [subject, setSubject] = useState("");
+  const [card, setCard] = useState(["", ""]);
+  const [cardLoading, setCardLoading] = useState("none");
+
+  const buttonDisplayLoad = () => (loading ? "none" : "flex");
+  const loaderDisplayLoad = () => (loading ? "flex" : "none");
 
   useEffect(() => {
     if (showQA === "Q") {
@@ -33,68 +42,68 @@ export default function Generate() {
     }
   }, [showQA]);
 
-  const [subject, setSubject] = useState();
   useEffect(() => {
-    if (page !== "create") {
+    if (page !== "create" && sessions.length > 0) {
       setSubject(sessions[page]);
     }
   }, [page, sessions]);
 
-  const [card, setCard] = useState(["", ""]);
-  const [cardLoading, setCardLoading] = useState("none");
   const loadMaterial = async () => {
-    if (isLoaded && user) {
+    if (isLoaded && user && subject) {
       setCardLoading("flex");
       const docRef = doc(collection(db, "flashcard"), user.id);
       const docSnap = await getDoc(docRef);
-      try {
-        var currCategories = Object.keys(docSnap.data()[subject]["topics"]).sort();
-        var currCategory = currCategories[parseInt(currCategories.length * Math.random())];
-        const response = await fetch("/api/card", {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain",
-          },
-          body: JSON.stringify(currCategory),
-        });
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        var returnedQ = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const text = decoder.decode(value, { stream: true });
-          returnedQ += text;
+      if (docSnap.exists()) {
+        try {
+          const subjectData = docSnap.data()[subject];
+          if (!subjectData || !subjectData.topics) throw new Error("No valid topics found for this session.");
+
+          const topics = Object.keys(subjectData.topics).filter((topic) => topic.trim() !== "");
+          if (topics.length === 0) throw new Error("No valid topics available.");
+
+          const selectedCategory = topics[Math.floor(Math.random() * topics.length)];
+
+          const response = await fetch("/api/card", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ subject: selectedCategory }),
+          });
+
+          if (!response.ok) throw new Error("Failed to fetch a question from the API.");
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let questionText = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            questionText += decoder.decode(value, { stream: true });
+          }
+
+          const parsedQuestion = JSON.parse(questionText);
+
+          if (parsedQuestion.question && parsedQuestion.question.trim() !== "") {
+            setCard([selectedCategory, parsedQuestion.question]);
+          } else {
+            throw new Error("Received an invalid question from the API.");
+          }
+        } catch (err) {
+          console.error("Error loading material:", err.message);
+        } finally {
+          setCardLoading("none");
         }
-
-        setCard([currCategory, JSON.parse(returnedQ)["question"]]);
+      } else {
+        console.error("Document does not exist or no subject selected.");
         setCardLoading("none");
-      } catch (err) {
-        console.error("Error loading material:", err);
       }
     }
   };
+
   useEffect(() => {
-    loadMaterial();
+    if (subject) loadMaterial();
   }, [subject]);
-
-  const [showCreate, setShowCreate] = useState("flex");
-  useEffect(() => {
-    if (page !== "create") {
-      setShowCreate("none");
-    }
-  }, [page]);
-
-  const [showOtherPages, setShowOtherPages] = useState("none");
-  useEffect(() => {
-    if (page === "create") {
-      setShowOtherPages("none");
-    }
-  }, [page]);
-
-  const buttonDisplayLoad = () => (loading ? "none" : "flex");
-  const loaderDisplayLoad = () => (!loading ? "none" : "flex");
 
   const updateSessions = async () => {
     if (isLoaded && user) {
@@ -106,24 +115,61 @@ export default function Generate() {
       }
     }
   };
+
   useEffect(() => {
     updateSessions();
   }, [isLoaded]);
+
+  const deleteSession = async (sessionName) => {
+    const confirmDelete = window.confirm(`Are you sure you want to delete the session "${sessionName}"?`);
+    if (!confirmDelete) return;
+
+    if (isLoaded && user) {
+      const docRef = doc(collection(db, "flashcard"), user.id);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        let sessionData = docSnap.data();
+
+        delete sessionData[sessionName];
+
+        await setDoc(docRef, sessionData);
+
+        setSessions(Object.keys(sessionData).sort());
+
+        if (page === sessionName) {
+          setPage("create");
+          setShowCreate("flex");
+          setShowOtherPages("none");
+        }
+      }
+    }
+  };
 
   const renderPrevSessions = () => {
     let rows = [];
     for (let i = 0; i < sessions.length; i++) {
       rows.push(
         <div
-          onClick={() => {
-            setPage(i);
-            setShowOtherPages("flex");
-            setShowCreate("none");
-          }}
           key={i}
-          className="p-2 w-full bg-gray-200 hover:brightness-90 cursor-pointer"
+          className="p-2 w-full bg-gray-200 hover:brightness-90 flex justify-between items-center cursor-pointer"
         >
-          <p className="w-full text-left text-black">{sessions[i]}</p>
+          <p
+            className="w-full text-left text-black"
+            onClick={() => {
+              setPage(i);
+              setShowOtherPages("flex");
+              setShowCreate("none");
+            }}
+          >
+            {sessions[i]}
+          </p>
+          <button
+            className="text-red-500 hover:text-red-700 ml-2 px-2 py-1 text-sm rounded border border-red-500 hover:border-red-700"
+            onClick={() => deleteSession(sessions[i])}
+          >
+            Delete
+          </button>
         </div>
       );
     }
@@ -149,13 +195,28 @@ export default function Generate() {
       setLoading(true);
       const docRef = doc(collection(db, "flashcard"), user.id);
       const docSnap = await getDoc(docRef);
+
       let prevData = docSnap.exists() ? docSnap.data() : {};
       const date = new Date();
 
       let topics = {};
-      curriculumData.forEach((topic) => {
-        topics[topic] = { streak: 0 };
-      });
+      if (Array.isArray(curriculumData) && curriculumData.length > 0) {
+        curriculumData = curriculumData.filter((topic) => topic.trim() !== "");
+
+        if (curriculumData.length === 0) {
+          console.error("No valid topics provided.");
+          setLoading(false);
+          return;
+        }
+
+        curriculumData.forEach((topic) => {
+          topics[topic] = { streak: 0 };
+        });
+      } else {
+        console.error("Expected curriculumData to be an array. Received:", typeof curriculumData);
+        setLoading(false);
+        return;
+      }
 
       prevData[input] = {
         date: {
@@ -167,8 +228,13 @@ export default function Generate() {
       };
 
       await setDoc(docRef, prevData);
-      setSessions([...sessions, input]);
+
+      setSessions((prevSessions) => [...prevSessions, input]);
       setLoading(false);
+      setSubject(input);
+      setPage(sessions.length); // Switch to the newly created session
+      setShowCreate("none");
+      setShowOtherPages("flex");
     }
   };
 
@@ -176,7 +242,6 @@ export default function Generate() {
     if (!loading && user) {
       setLoading(true);
       if (user.id) {
-        setSessions((prevData) => [...prevData, input]);
         const docRef = doc(collection(db, "flashcard"), user.id);
         const docSnap = await getDoc(docRef);
         let prevData = {};
@@ -194,22 +259,19 @@ export default function Generate() {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        var returnedTopics = "";
+        let returnedTopics = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const text = decoder.decode(value, { stream: true });
-          returnedTopics += text;
+          returnedTopics += decoder.decode(value, { stream: true });
         }
-        returnedTopics = JSON.parse(returnedTopics);
-        returnedTopics = returnedTopics["subtopics"];
+        returnedTopics = JSON.parse(returnedTopics)["subtopics"];
 
-        var topics = {};
+        const topics = {};
         for (let i = 0; i < returnedTopics.length; i++) {
-          topics[returnedTopics[i]] = {
-            streak: 0,
-          };
+          topics[returnedTopics[i]] = { streak: 0 };
         }
+
         prevData[input] = {
           date: {
             day: date.getDate(),
@@ -218,10 +280,16 @@ export default function Generate() {
           },
           topics,
         };
+
         await setDoc(docRef, prevData);
+        updateSessions();
         setInput("");
+        setLoading(false);
+        setSubject(input);
+        setPage(sessions.length);
+        setShowCreate("none");
+        setShowOtherPages("flex");
       }
-      setLoading(false);
     }
   };
 
@@ -229,7 +297,6 @@ export default function Generate() {
   const [feedback, setFeedback] = useState(["", ""]);
   const onAnswer = async () => {
     setLoading(true);
-    setAnswer("");
     const response = await fetch("/api/check", {
       method: "POST",
       headers: {
@@ -243,17 +310,16 @@ export default function Generate() {
     });
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    var verified = "";
+    let verified = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const text = decoder.decode(value, { stream: true });
-      verified += text;
+      verified += decoder.decode(value, { stream: true });
     }
     verified = JSON.parse(verified);
 
-    setFeedback([verified["correct"] ? "Correct" : "Incorrect", verified["improvement"]]);
+    setFeedback([verified.correct ? "Correct" : "Incorrect", verified.improvement]);
     setShowQA("A");
     setLoading(false);
   };
@@ -286,6 +352,7 @@ export default function Generate() {
                     className="cursor-pointer"
                     onClick={() => {
                       setShowCreate("flex");
+                      setShowOtherPages("none");
                       setPage("create");
                     }}
                   />
@@ -320,6 +387,8 @@ export default function Generate() {
               style={{ display: showIcons() }}
               className="cursor-pointer rounded p-2 bg-white hover:brightness-90"
               onClick={() => {
+                setShowCreate("flex");
+                setShowOtherPages("none");
                 setPage("create");
               }}
             >
